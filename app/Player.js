@@ -2,6 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { joinRoom, send, genCode, fmtTime, WRITE_INTERVAL_MS, STALE_MS, DRIFT_THRESHOLD_S } from './vibeStore';
+import BackgroundLayers from './components/BackgroundLayers';
+import TopBar from './components/TopBar';
+import MoodModal from './components/MoodModal';
+import VibeBanner from './components/VibeBanner';
+import ShareModal from './components/ShareModal';
+import PlayerBar from './components/PlayerBar';
 
 // TODO: replace remaining placeholders with real official-label playlist IDs
 const CATEGORIES = [
@@ -467,172 +473,47 @@ export default function Player() {
 
   return (
     <div className="root" style={{ '--accent': accent }}>
-      <div
-        className={`bg-layer ${frontLayer === 'a' ? 'visible' : ''}`}
-        style={{ backgroundImage: layerAImage ? `url(${layerAImage})` : 'none' }}
+      <BackgroundLayers layerAImage={layerAImage} layerBImage={layerBImage} frontLayer={frontLayer} />
+
+      <TopBar onOpenMood={openMoodModal} onOpenShare={startSharing} />
+
+      <MoodModal
+        open={moodOpen}
+        onClose={() => setMoodOpen(false)}
+        categories={CATEGORIES}
+        activeCategory={activeCategory}
+        modalCategory={modalCategory}
+        onSelectCategory={selectModalCategory}
+        playlistCache={playlistCache}
+        lastAppliedVideoId={lastAppliedVideoIdRef.current}
+        onPlayTrack={playTrackAt}
       />
-      <div
-        className={`bg-layer ${frontLayer === 'b' ? 'visible' : ''}`}
-        style={{ backgroundImage: layerBImage ? `url(${layerBImage})` : 'none' }}
-      />
-      <div className="bg-scrim" />
 
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark">🚌</span>
-          <div>
-            <div className="brand-title">Raat Ka Safar</div>
-            <div className="brand-sub">NIGHT DRIVES · OLD SONGS</div>
-          </div>
-        </div>
-        <button className="pill-btn mood-btn" onClick={openMoodModal}>
-          🎧 Mood
-        </button>
-        <button className="share-icon-btn" onClick={startSharing} title="Vibe Together">
-          🔗
-        </button>
-      </header>
+      <VibeBanner banner={vibeBanner} onJoin={joinVibe} onDismiss={dismissBanner} />
 
-      {moodOpen && (
-        <div className="mood-overlay" onClick={() => setMoodOpen(false)}>
-          <div className="mood-modal glass" onClick={(e) => e.stopPropagation()}>
-            <div className="mood-modal-header">
-              <h2>Set the mood</h2>
-              <button className="icon-btn" onClick={() => setMoodOpen(false)}>✕</button>
-            </div>
-
-            <div className="mood-categories">
-              {CATEGORIES.map((cat, idx) => (
-                <button
-                  key={cat.label}
-                  className={`chip ${idx === activeCategory ? 'active' : ''} ${modalCategory === idx ? 'menu-open' : ''}`}
-                  onClick={() => selectModalCategory(idx)}
-                >
-                  {cat.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="mood-tracks">
-              {playlistCache[modalCategory] === 'loading' && (
-                <div className="track-menu-empty">Loading tracks…</div>
-              )}
-              {Array.isArray(playlistCache[modalCategory]) && playlistCache[modalCategory].length === 0 && (
-                <div className="track-menu-empty">No tracks found.</div>
-              )}
-              {Array.isArray(playlistCache[modalCategory]) &&
-                playlistCache[modalCategory].map((t, trackIdx) => {
-                  const isPlayingTrack = modalCategory === activeCategory && t.videoId === lastAppliedVideoIdRef.current;
-                  return (
-                    <button
-                      key={t.videoId + trackIdx}
-                      className={`track-menu-item ${isPlayingTrack ? 'playing' : ''}`}
-                      onClick={() => playTrackAt(modalCategory, trackIdx)}
-                    >
-                      <span className="track-menu-num">{isPlayingTrack ? '♪' : trackIdx + 1}</span>
-                      <img
-                        className="track-menu-thumb"
-                        src={`https://i.ytimg.com/vi/${t.videoId}/default.jpg`}
-                        alt=""
-                        loading="lazy"
-                      />
-                      <span className="track-menu-info">
-                        <span className="track-menu-title">{t.title}</span>
-                        <span className="track-menu-subtitle">{t.author || 'YouTube'}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {vibeBanner && (
-        <div className="vibe-banner glass">
-          <span>{vibeBanner.text}</span>
-          {vibeBanner.showJoin && (
-            <button className="pill-btn" onClick={() => joinVibe(vibeBanner.code)}>
-              Join &amp; Play
-            </button>
-          )}
-          <button className="icon-btn" onClick={dismissBanner}>✕</button>
-        </div>
-      )}
-
-      {shareLink && (
-        <div className="mood-overlay" onClick={() => setShareLink(null)}>
-          <div className="share-modal glass" onClick={(e) => e.stopPropagation()}>
-            <div className="mood-modal-header">
-              <h2>Vibe Together</h2>
-              <button className="icon-btn" onClick={() => setShareLink(null)}>✕</button>
-            </div>
-
-            <p className="share-desc">
-              Anyone who opens this link joins the same room — same track, same timestamp.
-              From there it's symmetric: whoever plays, pauses, seeks, skips, or picks a new
-              mood, everyone hears it. No host, no permission needed.
-            </p>
-
-            <div className="share-link-row">
-              <input type="text" value={shareLink} readOnly onFocus={(e) => e.target.select()} />
-              <button className="pill-btn" onClick={copyLink}>Copy</button>
-            </div>
-
-            <button className="leave-room-btn" onClick={leaveRoom}>Leave room</button>
-          </div>
-        </div>
-      )}
+      <ShareModal shareLink={shareLink} onClose={() => setShareLink(null)} onCopy={copyLink} onLeave={leaveRoom} />
 
       <div className="hero-center">
         <div className="hero-tag">NON-STOP · SHARE THE VIBE</div>
-        <h1 className="hero-title">RAAT KA SAFAR</h1>
+        <h1 className="hero-title">रात का सफर</h1>
       </div>
 
       <div id="yt-audio" className="yt-audio-mount" />
 
-      <footer className="playerbar-wrap">
-        <div className="playerbar glass">
-          <div className="thumb">
-            {thumb ? <img src={thumb} alt="" /> : <span className="thumb-fallback">♪</span>}
-          </div>
-          <div className="track-info">
-            <div className="track-title">{trackTitle}</div>
-            <div className="track-author">{trackAuthor || 'YouTube'}</div>
-          </div>
-
-          <button className="bar-icon-btn" onClick={prevTrack} title="Previous">⏮</button>
-          <button className="bar-play-btn" onClick={togglePlay} title="Play/Pause">
-            {isPlaying ? '⏸' : '▶'}
-          </button>
-          <button className="bar-icon-btn" onClick={nextTrack} title="Next">⏭</button>
-
-          <div className="seek-inline">
-            <span className="time">{fmtTime(curTime)}</span>
-            <input
-              type="range"
-              min="0"
-              max={duration || 100}
-              value={curTime}
-              style={{
-                background: `linear-gradient(to right, var(--accent) ${((curTime / (duration || 100)) * 100).toFixed(2)}%, rgba(255,255,255,0.18) ${((curTime / (duration || 100)) * 100).toFixed(2)}%)`,
-              }}
-              onMouseDown={() => (seekDraggingRef.current = true)}
-              onTouchStart={() => (seekDraggingRef.current = true)}
-              onChange={onSeekChange}
-              onMouseUp={onSeekCommit}
-              onTouchEnd={onSeekCommit}
-            />
-            <span className="time">{fmtTime(duration)}</span>
-          </div>
-        </div>
-
-        <div className="keyhints">
-          <span><kbd>Space</kbd> PLAY / PAUSE</span>
-          <span><kbd>←</kbd><kbd>→</kbd> SEEK</span>
-          <span><kbd>N</kbd><kbd>P</kbd> TRACK</span>
-        </div>
-      </footer>
+      <PlayerBar
+        thumb={thumb}
+        trackTitle={trackTitle}
+        trackAuthor={trackAuthor}
+        isPlaying={isPlaying}
+        curTime={curTime}
+        duration={duration}
+        onPrev={prevTrack}
+        onPlayPause={togglePlay}
+        onNext={nextTrack}
+        onSeekChange={onSeekChange}
+        onSeekCommit={onSeekCommit}
+        onSeekDragStart={() => (seekDraggingRef.current = true)}
+      />
     </div>
   );
 }
