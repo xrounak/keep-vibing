@@ -13,6 +13,8 @@ export default function ShareModal({ shareLink, onClose, onCopy, onLeave }) {
           </button>
         </div>
 
+        <span className="experimental-tag">Experimental feature</span>
+
         <p className="share-desc">
           Anyone who opens this link joins the same room — same track, same timestamp.
           From there it's symmetric: whoever plays, pauses, seeks, skips, or picks a new

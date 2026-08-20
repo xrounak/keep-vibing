@@ -402,6 +402,19 @@ body {
   gap: 1.1rem;
 }
 
+.experimental-tag {
+  align-self: flex-start;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  margin-top: -0.4rem;
+}
+
 .share-desc {
   font-size: 0.85rem;
   line-height: 1.5;
@@ -508,6 +521,13 @@ body {
   border-radius: 999px;
   width: 100%;
   max-width: 720px;
+}
+
+/* on desktop this wrapper is invisible to layout — its children (thumb,
+   track-info, transport buttons) sit directly in .playerbar's row, same
+   as before. On mobile it becomes its own row, see media query below. */
+.playerbar-controls-row {
+  display: contents;
 }
 
 .thumb {
@@ -687,24 +707,71 @@ body {
 }
 
 @media (max-width: 640px) {
+  .stage {
+    padding: 2rem 1rem 3rem;
+  }
+
   .topbar {
     padding: 1rem 1rem;
     gap: 0.5rem;
   }
   .brand-sub { display: none; }
-  .brand-mark { width: 34px; height: 34px; font-size: 0.95rem; }
+  .brand-mark { width: 34px; height: 34px; }
   .brand-title { font-size: 0.9rem; }
   .mood-btn { font-size: 0.78rem; padding: 0.45rem 0.9rem; }
-  .share-icon-btn { width: 34px; height: 34px; font-size: 0.9rem; }
-  .track-info { display: none; }
+  .share-icon-btn { width: 34px; height: 34px; }
+
   .keyhints { display: none; }
+
   .mood-overlay { padding: 0.75rem; }
   .mood-modal, .share-modal { padding: 1.1rem; border-radius: 18px; }
-  .playerbar { padding: 0.6rem 0.85rem; gap: 0.6rem; }
+  .mood-modal { max-height: 75vh; }
+  .track-menu-thumb { width: 34px; height: 34px; }
+
+  /* two rows: transport controls on top, timeline below — the single
+     pill row got cramped once track-info came back into play on mobile */
+  .playerbar-wrap {
+    padding: 0 0.85rem 1.5rem;
+  }
+
+  .playerbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+    padding: 0.75rem 0.9rem 0.85rem;
+    border-radius: 20px;
+  }
+
+  .playerbar-controls-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    width: 100%;
+  }
+
+  .thumb {
+    width: 38px;
+    height: 38px;
+  }
+
+  .track-info {
+    flex: 1;
+    min-width: 0;
+    width: auto;
+  }
+
+  .track-title {
+    font-size: 0.8rem;
+  }
+
+  .seek-inline {
+    width: 100%;
+  }
 }
 
 @media (max-width: 380px) {
   .topbar { grid-template-columns: auto 1fr auto; }
   .brand-title { font-size: 0.8rem; }
   .mood-btn span { display: none; }
+  .track-info { display: none; }
 }

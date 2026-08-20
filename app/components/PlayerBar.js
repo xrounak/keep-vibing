@@ -20,23 +20,25 @@ export default function PlayerBar({
   return (
     <footer className="playerbar-wrap">
       <div className="playerbar glass">
-        <div className="thumb">
-          {thumb ? <img src={thumb} alt="" /> : <IconMusicNote className="thumb-fallback" width={18} height={18} />}
-        </div>
-        <div className="track-info">
-          <div className="track-title">{trackTitle}</div>
-          <div className="track-author">{trackAuthor || 'YouTube'}</div>
-        </div>
+        <div className="playerbar-controls-row">
+          <div className="thumb">
+            {thumb ? <img src={thumb} alt="" /> : <IconMusicNote className="thumb-fallback" width={18} height={18} />}
+          </div>
+          <div className="track-info">
+            <div className="track-title">{trackTitle}</div>
+            <div className="track-author">{trackAuthor || 'YouTube'}</div>
+          </div>
 
-        <button className="bar-icon-btn" onClick={onPrev} title="Previous">
-          <IconSkipBack width={16} height={16} />
-        </button>
-        <button className="bar-play-btn" onClick={onPlayPause} title="Play/Pause">
-          {isPlaying ? <IconPause width={19} height={19} /> : <IconPlay width={19} height={19} />}
-        </button>
-        <button className="bar-icon-btn" onClick={onNext} title="Next">
-          <IconSkipForward width={16} height={16} />
-        </button>
+          <button className="bar-icon-btn" onClick={onPrev} title="Previous">
+            <IconSkipBack width={16} height={16} />
+          </button>
+          <button className="bar-play-btn" onClick={onPlayPause} title="Play/Pause">
+            {isPlaying ? <IconPause width={19} height={19} /> : <IconPlay width={19} height={19} />}
+          </button>
+          <button className="bar-icon-btn" onClick={onNext} title="Next">
+            <IconSkipForward width={16} height={16} />
+          </button>
+        </div>
 
         <div className="seek-inline">
           <span className="time">{fmtTime(curTime)}</span>

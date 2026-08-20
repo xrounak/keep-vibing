@@ -105,13 +105,18 @@ export default function Player() {
 
     function createPlayer() {
       if (cancelled) return;
+      // best-effort autoplay: browsers silently block this unless the site
+      // already has autoplay trust (returning visitor) — falls back to a
+      // normal paused state with no error either way. Skipped when landing
+      // via a shared link, since joining that room is its own deliberate step.
+      const hasIncomingVibe = new URLSearchParams(location.search).has('vibe');
       const player = new window.YT.Player('yt-audio', {
         height: '1',
         width: '1',
         playerVars: {
           listType: 'playlist',
           list: CATEGORIES[0].playlist,
-          autoplay: 0,
+          autoplay: hasIncomingVibe ? 0 : 1,
           playsinline: 1,
         },
         events: {
