@@ -8,14 +8,13 @@ import MoodModal from './components/MoodModal';
 import VibeBanner from './components/VibeBanner';
 import ShareModal from './components/ShareModal';
 import PlayerBar from './components/PlayerBar';
+import playlistsData from './playlists.json';
 
-// TODO: replace remaining placeholders with real official-label playlist IDs
-const CATEGORIES = [
-  { label: '90s', playlist: 'RDCPgD-SQ1fJ8' },
-  // { label: 'Punjabi', playlist: 'PLACEHOLDER_PUNJABI' },
-  // { label: 'Haryanvi', playlist: 'PLACEHOLDER_HARYANVI' },
-  // { label: 'Workout', playlist: 'PLACEHOLDER_WORKOUT' },
-];
+// mini "database" of playlists — edit app/playlists.json to add/remove
+// moods. Each entry: { label, source, playlistId }. Only source:"youtube"
+// is wired to actual playback (Spotify's embed only gives non-logged-in
+// listeners 30s previews, incompatible with this app's no-login model).
+const CATEGORIES = playlistsData.filter((p) => p.source === 'youtube');
 
 // accents cycle independently of how many bg images actually exist
 const ACCENTS = ['#e2a63b', '#e8c34a', '#e98a72', '#8a9b5e', '#c9a0dc', '#7fb8b0'];
@@ -115,7 +114,7 @@ export default function Player() {
         width: '1',
         playerVars: {
           listType: 'playlist',
-          list: CATEGORIES[0].playlist,
+          list: CATEGORIES[0].playlistId,
           autoplay: hasIncomingVibe ? 0 : 1,
           playsinline: 1,
         },
@@ -249,7 +248,7 @@ export default function Player() {
   function selectCategory(idx) {
     activeCategoryRef.current = idx;
     setActiveCategory(idx);
-    playerRef.current?.loadPlaylist({ listType: 'playlist', list: CATEGORIES[idx].playlist });
+    playerRef.current?.loadPlaylist({ listType: 'playlist', list: CATEGORIES[idx].playlistId });
   }
 
   function openMoodModal() {
@@ -388,7 +387,7 @@ export default function Player() {
       // Next/Prev keep working for whoever just received this update
       player.loadPlaylist({
         listType: 'playlist',
-        list: category.playlist,
+        list: category.playlistId,
         index: state.playlistIndex || 0,
         startSeconds: expected,
       });
