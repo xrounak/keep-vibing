@@ -338,9 +338,8 @@ body {
   text-shadow: 0 4px 40px rgba(0, 0, 0, 0.5);
 }
 
-/* ---- vibe banner / share toast ---- */
-.vibe-banner,
-.share-toast {
+/* ---- vibe banner ---- */
+.vibe-banner {
   position: fixed;
   top: 1rem;
   left: 50%;
@@ -356,14 +355,51 @@ body {
   max-width: 92vw;
 }
 
-.share-toast input {
+/* ---- vibe together (share) modal ---- */
+.share-modal {
+  width: 100%;
+  max-width: 440px;
+  border-radius: 22px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.share-desc {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: rgba(245, 234, 210, 0.75);
+}
+
+.share-link-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.share-link-row input {
+  flex: 1;
+  min-width: 0;
   background: rgba(255, 255, 255, 0.1);
   border: none;
   color: var(--cream);
-  padding: 0.4rem 0.7rem;
+  padding: 0.55rem 0.8rem;
   border-radius: 999px;
   font-size: 0.78rem;
-  min-width: 200px;
+}
+
+.leave-room-btn {
+  background: none;
+  border: none;
+  color: rgba(245, 234, 210, 0.5);
+  font-size: 0.78rem;
+  cursor: pointer;
+  align-self: center;
+  padding: 0.3rem;
+}
+
+.leave-room-btn:hover {
+  color: var(--cream);
 }
 
 .pill-btn {

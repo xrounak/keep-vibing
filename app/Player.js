@@ -488,7 +488,7 @@ export default function Player() {
         <button className="pill-btn mood-btn" onClick={openMoodModal}>
           🎧 Mood
         </button>
-        <button className="share-icon-btn" onClick={startSharing} title="Share Vibe">
+        <button className="share-icon-btn" onClick={startSharing} title="Vibe Together">
           🔗
         </button>
       </header>
@@ -561,10 +561,26 @@ export default function Player() {
       )}
 
       {shareLink && (
-        <div className="share-toast glass">
-          <input type="text" value={shareLink} readOnly onFocus={(e) => e.target.select()} />
-          <button className="pill-btn" onClick={copyLink}>Copy</button>
-          <button className="icon-btn" onClick={leaveRoom}>✕</button>
+        <div className="mood-overlay" onClick={() => setShareLink(null)}>
+          <div className="share-modal glass" onClick={(e) => e.stopPropagation()}>
+            <div className="mood-modal-header">
+              <h2>Vibe Together</h2>
+              <button className="icon-btn" onClick={() => setShareLink(null)}>✕</button>
+            </div>
+
+            <p className="share-desc">
+              Anyone who opens this link joins the same room — same track, same timestamp.
+              From there it's symmetric: whoever plays, pauses, seeks, skips, or picks a new
+              mood, everyone hears it. No host, no permission needed.
+            </p>
+
+            <div className="share-link-row">
+              <input type="text" value={shareLink} readOnly onFocus={(e) => e.target.select()} />
+              <button className="pill-btn" onClick={copyLink}>Copy</button>
+            </div>
+
+            <button className="leave-room-btn" onClick={leaveRoom}>Leave room</button>
+          </div>
         </div>
       )}
 
