@@ -392,7 +392,10 @@ export default function Player() {
         index: state.playlistIndex || 0,
         startSeconds: expected,
       });
-      if (!state.isPlaying) player.pauseVideo();
+      // loadPlaylist doesn't reliably auto-resume on a player constructed
+      // with autoplay:0 — call the right one explicitly instead of assuming
+      if (state.isPlaying) player.playVideo();
+      else player.pauseVideo();
     } else {
       const playingNow = player.getPlayerState() === window.YT.PlayerState.PLAYING;
       if (state.isPlaying && !playingNow) player.playVideo();
