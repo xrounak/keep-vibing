@@ -117,6 +117,12 @@ export default function Player() {
           list: CATEGORIES[0].playlistId,
           autoplay: hasIncomingVibe ? 0 : 1,
           playsinline: 1,
+          // without these, YouTube spills into personalized "up next"
+          // recommendations (tied to whatever Google account is logged
+          // into that device) once the playlist nears its end — that's
+          // what looked like the playlist randomly changing per device
+          rel: 0,
+          loop: 1,
         },
         events: {
           onReady: () => {
