@@ -1,5 +1,8 @@
-import { IconPlay, IconPause, IconSkipBack, IconSkipForward, IconMusicNote } from './icons';
+import { IconPlay, IconPause, IconSkipBack, IconSkipForward, IconMusicNote, IconRepeat, IconRepeatOne, IconShuffle } from './icons';
 import { fmtTime } from '../vibeStore';
+
+const LOOP_ICON = { playlist: IconRepeat, shuffle: IconShuffle, song: IconRepeatOne };
+const LOOP_TITLE = { playlist: 'Repeat playlist — tap for shuffle', shuffle: 'Shuffle — tap to repeat one', song: 'Repeat one — tap to repeat playlist' };
 
 export default function PlayerBar({
   thumb,
@@ -8,14 +11,17 @@ export default function PlayerBar({
   isPlaying,
   curTime,
   duration,
+  loopMode,
   onPrev,
   onPlayPause,
   onNext,
+  onCycleLoop,
   onSeekChange,
   onSeekCommit,
   onSeekDragStart,
 }) {
   const pct = ((curTime / (duration || 100)) * 100).toFixed(2);
+  const LoopIcon = LOOP_ICON[loopMode] || IconRepeat;
 
   return (
     <footer className="playerbar-wrap">
@@ -39,6 +45,13 @@ export default function PlayerBar({
           </button>
           <button className="bar-icon-btn" onClick={onNext} title="Next">
             <IconSkipForward width={16} height={16} />
+          </button>
+          <button
+            className={`bar-icon-btn loop-btn ${loopMode !== 'playlist' ? 'active' : ''}`}
+            onClick={onCycleLoop}
+            title={LOOP_TITLE[loopMode]}
+          >
+            <LoopIcon width={16} height={16} />
           </button>
         </div>
 

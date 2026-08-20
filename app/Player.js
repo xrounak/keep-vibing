@@ -36,8 +36,10 @@ export default function Player() {
   const bgImagesRef = useRef([]);
   const frontLayerRef = useRef('a');
   const activeCategoryRef = useRef(0);
+  const loopModeRef = useRef('playlist'); // 'song' | 'playlist' | 'shuffle' — read inside the once-registered YT event handler
 
   const [activeCategory, setActiveCategory] = useState(0);
+  const [loopMode, setLoopMode] = useState('playlist');
   const [isPlaying, setIsPlaying] = useState(false);
   const [trackTitle, setTrackTitle] = useState('Tap play to start');
   const [trackAuthor, setTrackAuthor] = useState('');
@@ -205,6 +207,12 @@ export default function Player() {
       } catch (_) {}
     } else if (e.data === window.YT.PlayerState.PAUSED) {
       setIsPlaying(false);
+    } else if (e.data === window.YT.PlayerState.ENDED && loopModeRef.current === 'song') {
+      // YT has no native single-video-loop toggle — replay it ourselves.
+      // The resulting PLAYING event covers the room broadcast, so return early.
+      player.seekTo(0, true);
+      player.playVideo();
+      return;
     }
 
     // any real local change (play/pause/track load) broadcasts to the room —
@@ -236,6 +244,23 @@ export default function Player() {
 
   function prevTrack() {
     playerRef.current?.previousVideo();
+  }
+
+  const LOOP_MODES = ['playlist', 'shuffle', 'song'];
+
+  function cycleLoopMode() {
+    const next = LOOP_MODES[(LOOP_MODES.indexOf(loopModeRef.current) + 1) % LOOP_MODES.length];
+    loopModeRef.current = next;
+    setLoopMode(next);
+
+    const player = playerRef.current;
+    if (!player) return;
+    // native loop/shuffle cover playlist & shuffle modes; song mode is
+    // handled by replaying on ENDED (see onPlayerStateChange) — keep
+    // native loop on regardless, as a safety net against ever falling
+    // into YouTube's own recommendation autoplay
+    player.setLoop(true);
+    player.setShuffle(next === 'shuffle');
   }
 
   function onSeekChange(e) {
@@ -520,9 +545,11 @@ export default function Player() {
         isPlaying={isPlaying}
         curTime={curTime}
         duration={duration}
+        loopMode={loopMode}
         onPrev={prevTrack}
         onPlayPause={togglePlay}
         onNext={nextTrack}
+        onCycleLoop={cycleLoopMode}
         onSeekChange={onSeekChange}
         onSeekCommit={onSeekCommit}
         onSeekDragStart={() => (seekDraggingRef.current = true)}

@@ -82,6 +82,42 @@ export function IconSkipForward(props) {
   );
 }
 
+export function IconRepeat(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M4 7h13a3 3 0 0 1 3 3v1" />
+      <path d="M17 4l3 3-3 3" />
+      <path d="M20 17H7a3 3 0 0 1-3-3v-1" />
+      <path d="M7 20l-3-3 3-3" />
+    </svg>
+  );
+}
+
+export function IconRepeatOne(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M4 7h13a3 3 0 0 1 3 3v1" />
+      <path d="M17 4l3 3-3 3" />
+      <path d="M20 17H7a3 3 0 0 1-3-3v-1" />
+      <path d="M7 20l-3-3 3-3" />
+      <path d="M11.3 9.3l1.1-.6v3.3" strokeWidth={1.8} />
+    </svg>
+  );
+}
+
+export function IconShuffle(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M3 6h3.5c2 0 3 1 4.3 3" />
+      <path d="M3 18h3.5c2 0 3-1 4.3-3" />
+      <path d="M14 6h3.5c1.2 0 2.2 .5 3 1.4" />
+      <path d="M14 18h3.5c1.2 0 2.2-.5 3-1.4" />
+      <path d="M18 3l3 3-3 3" />
+      <path d="M18 15l3 3-3 3" />
+    </svg>
+  );
+}
+
 export function IconMusicNote(props) {
   return (
     <svg {...base} {...props}>

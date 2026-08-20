@@ -595,6 +595,12 @@ body {
   opacity: 1;
 }
 
+.loop-btn.active {
+  color: var(--accent);
+  opacity: 1;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 60%, transparent));
+}
+
 .bar-play-btn {
   background: none;
   border: none;
