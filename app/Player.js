@@ -23,6 +23,8 @@ export default function Player() {
   const lastAppliedVideoIdRef = useRef(null);
   const lastKnownStateRef = useRef(null); // for answering late-joiners' request-state
   const applyingRemoteRef = useRef(false); // guards against re-broadcasting a change we just applied from the network
+  const applyingRemoteTimeoutRef = useRef(null);
+  const broadcastDebounceRef = useRef(null);
   const seekDraggingRef = useRef(false);
   const lastVideoIdRef = useRef(null);
   const sceneIdxRef = useRef(0);
@@ -190,9 +192,14 @@ export default function Player() {
     }
 
     // any real local change (play/pause/track load) broadcasts to the room —
-    // unless this state change was itself caused by applying a remote update
+    // unless this state change was itself caused by applying a remote update.
+    // Debounced: loading a track fires several state transitions in quick
+    // succession (BUFFERING → PLAYING etc), only the settled one should send.
     if (roomModeRef.current === 'active' && !applyingRemoteRef.current) {
-      broadcastState();
+      clearTimeout(broadcastDebounceRef.current);
+      broadcastDebounceRef.current = setTimeout(() => {
+        if (!applyingRemoteRef.current) broadcastState();
+      }, 250);
     }
   }
 
@@ -351,9 +358,18 @@ export default function Player() {
       setActiveCategory(state.categoryIdx);
     }
 
-    applyingRemoteRef.current = true;
+    const isTrackChange = state.videoId !== lastAppliedVideoIdRef.current;
 
-    if (state.videoId !== lastAppliedVideoIdRef.current) {
+    // suppress our own reactive broadcast while this settles — track changes
+    // trigger real buffering (can take a couple seconds on a slow connection),
+    // same-track play/pause/seek settles almost instantly
+    applyingRemoteRef.current = true;
+    clearTimeout(applyingRemoteTimeoutRef.current);
+    applyingRemoteTimeoutRef.current = setTimeout(() => {
+      applyingRemoteRef.current = false;
+    }, isTrackChange ? 3000 : 500);
+
+    if (isTrackChange) {
       lastAppliedVideoIdRef.current = state.videoId;
       const expected = state.position + (Date.now() - state.updatedAt) / 1000;
       const category = CATEGORIES[state.categoryIdx] || CATEGORIES[activeCategoryRef.current];
@@ -377,10 +393,6 @@ export default function Player() {
         player.seekTo(expected, true);
       }
     }
-
-    setTimeout(() => {
-      applyingRemoteRef.current = false;
-    }, 400);
   }
 
   // "Share Vibe" — create a room (or re-show the link if already in one)
