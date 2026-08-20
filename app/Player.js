@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { joinRoom, sendState, genCode, fmtTime, WRITE_INTERVAL_MS, STALE_MS, DRIFT_THRESHOLD_S } from './vibeStore';
+import { joinRoom, send, genCode, fmtTime, WRITE_INTERVAL_MS, STALE_MS, DRIFT_THRESHOLD_S } from './vibeStore';
 
 // TODO: replace remaining placeholders with real official-label playlist IDs
 const CATEGORIES = [
@@ -17,16 +17,18 @@ const ACCENTS = ['#e2a63b', '#e8c34a', '#e98a72', '#8a9b5e', '#c9a0dc', '#7fb8b0
 export default function Player() {
   const playerRef = useRef(null);
   const socketRef = useRef(null);
-  const previewSocketRef = useRef(null);
-  const modeRef = useRef('idle'); // idle | sharing | listening
-  const shareCodeRef = useRef(null);
+  const roomModeRef = useRef('off'); // off | preview | active — symmetric: anyone in 'active' can control
+  const roomCodeRef = useRef(null);
   const writeTimerRef = useRef(null);
   const lastAppliedVideoIdRef = useRef(null);
+  const lastKnownStateRef = useRef(null); // for answering late-joiners' request-state
+  const applyingRemoteRef = useRef(false); // guards against re-broadcasting a change we just applied from the network
   const seekDraggingRef = useRef(false);
   const lastVideoIdRef = useRef(null);
   const sceneIdxRef = useRef(0);
   const bgImagesRef = useRef([]);
   const frontLayerRef = useRef('a');
+  const activeCategoryRef = useRef(0);
 
   const [activeCategory, setActiveCategory] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -177,6 +179,7 @@ export default function Player() {
         setTrackTitle(data.title || 'Playing…');
         setTrackAuthor(data.author || '');
         setThumb(data.video_id ? `https://i.ytimg.com/vi/${data.video_id}/default.jpg` : null);
+        if (data.video_id) lastAppliedVideoIdRef.current = data.video_id;
         if (data.video_id && data.video_id !== lastVideoIdRef.current) {
           lastVideoIdRef.current = data.video_id;
           nextScene();
@@ -185,7 +188,12 @@ export default function Player() {
     } else if (e.data === window.YT.PlayerState.PAUSED) {
       setIsPlaying(false);
     }
-    if (modeRef.current === 'sharing') pushState();
+
+    // any real local change (play/pause/track load) broadcasts to the room —
+    // unless this state change was itself caused by applying a remote update
+    if (roomModeRef.current === 'active' && !applyingRemoteRef.current) {
+      broadcastState();
+    }
   }
 
   // ---- controls ----
@@ -215,9 +223,13 @@ export default function Player() {
     const val = Number(e.target.value);
     playerRef.current?.seekTo(val, true);
     seekDraggingRef.current = false;
+    // seekTo alone doesn't fire onStateChange — broadcast explicitly, passing
+    // the target position directly since getCurrentTime() may lag right after seek
+    if (roomModeRef.current === 'active') broadcastState(val);
   }
 
   function selectCategory(idx) {
+    activeCategoryRef.current = idx;
     setActiveCategory(idx);
     playerRef.current?.loadPlaylist({ listType: 'playlist', list: CATEGORIES[idx].playlist });
   }
@@ -280,151 +292,160 @@ export default function Player() {
     setMoodOpen(false);
   }
 
-  // ---- Share Vibe: sharer side ----
-  function startSharing() {
-    if (modeRef.current === 'listening') stopListening();
-    const code = genCode();
-    shareCodeRef.current = code;
-    modeRef.current = 'sharing';
+  // ---- Share Vibe: symmetric room — anyone in 'active' mode can control
+  // playback, track, and category for everyone else in the room. No owner.
 
-    const socket = joinRoom(code, () => {}); // sharer doesn't need to react to broadcasts
+  function broadcastState(positionOverride) {
+    const player = playerRef.current;
+    const socket = socketRef.current;
+    if (roomModeRef.current !== 'active' || !player || !player.getVideoData || !socket) return;
+    const data = player.getVideoData();
+    if (!data.video_id) return;
+    const state = {
+      videoId: data.video_id,
+      trackName: data.title || '',
+      position: positionOverride !== undefined ? positionOverride : (player.getCurrentTime ? player.getCurrentTime() : 0),
+      isPlaying: player.getPlayerState() === window.YT.PlayerState.PLAYING,
+      categoryIdx: activeCategoryRef.current,
+      playlistIndex: player.getPlaylistIndex ? player.getPlaylistIndex() : 0,
+      updatedAt: Date.now(),
+    };
+    lastKnownStateRef.current = state;
+    send(socket, { type: 'update', state });
+  }
+
+  function handleRoomMessage(msg) {
+    if (msg.type === 'request-state') {
+      if (lastKnownStateRef.current && socketRef.current) {
+        send(socketRef.current, { type: 'update', state: lastKnownStateRef.current });
+      }
+      return;
+    }
+    if (msg.type !== 'update' || !msg.state) return;
+
+    const state = msg.state;
+    lastKnownStateRef.current = state;
+
+    if (roomModeRef.current === 'preview') {
+      if (Date.now() - state.updatedAt > STALE_MS) {
+        setVibeBanner({ text: 'This vibe has ended.', showJoin: false, code: roomCodeRef.current });
+      } else {
+        setVibeBanner({
+          text: `Someone's listening to ${state.trackName || 'a track'} — ${fmtTime(state.position)}`,
+          showJoin: true,
+          code: roomCodeRef.current,
+        });
+      }
+      return;
+    }
+
+    if (roomModeRef.current === 'active') applyRemoteState(state);
+  }
+
+  function applyRemoteState(state) {
+    const player = playerRef.current;
+    if (!player) return;
+
+    if (state.categoryIdx !== undefined && state.categoryIdx !== activeCategoryRef.current) {
+      activeCategoryRef.current = state.categoryIdx;
+      setActiveCategory(state.categoryIdx);
+    }
+
+    applyingRemoteRef.current = true;
+
+    if (state.videoId !== lastAppliedVideoIdRef.current) {
+      lastAppliedVideoIdRef.current = state.videoId;
+      const expected = state.position + (Date.now() - state.updatedAt) / 1000;
+      const category = CATEGORIES[state.categoryIdx] || CATEGORIES[activeCategoryRef.current];
+      // loadPlaylist (not loadVideoById) keeps playlist context alive, so
+      // Next/Prev keep working for whoever just received this update
+      player.loadPlaylist({
+        listType: 'playlist',
+        list: category.playlist,
+        index: state.playlistIndex || 0,
+        startSeconds: expected,
+      });
+      if (!state.isPlaying) player.pauseVideo();
+    } else {
+      const playingNow = player.getPlayerState() === window.YT.PlayerState.PLAYING;
+      if (state.isPlaying && !playingNow) player.playVideo();
+      if (!state.isPlaying && playingNow) player.pauseVideo();
+
+      const expected = state.position + (Date.now() - state.updatedAt) / 1000;
+      const actual = player.getCurrentTime ? player.getCurrentTime() : 0;
+      if (Math.abs(expected - actual) > DRIFT_THRESHOLD_S) {
+        player.seekTo(expected, true);
+      }
+    }
+
+    setTimeout(() => {
+      applyingRemoteRef.current = false;
+    }, 400);
+  }
+
+  // "Share Vibe" — create a room (or re-show the link if already in one)
+  function startSharing() {
+    if (roomModeRef.current === 'active' && roomCodeRef.current) {
+      setShareLink(`${location.origin}${location.pathname}?vibe=${roomCodeRef.current}`);
+      return;
+    }
+    if (roomModeRef.current !== 'off') leaveRoom();
+
+    const code = genCode();
+    roomCodeRef.current = code;
+    roomModeRef.current = 'active';
+
+    const socket = joinRoom(code, handleRoomMessage);
     socketRef.current = socket;
-    socket.addEventListener('open', () => pushState());
-    writeTimerRef.current = setInterval(pushState, WRITE_INTERVAL_MS);
+    socket.addEventListener('open', () => broadcastState());
+    writeTimerRef.current = setInterval(broadcastState, WRITE_INTERVAL_MS);
     setShareLink(`${location.origin}${location.pathname}?vibe=${code}`);
   }
 
-  function pushState() {
-    const player = playerRef.current;
-    const socket = socketRef.current;
-    if (modeRef.current !== 'sharing' || !player || !player.getVideoData || !socket) return;
-    const data = player.getVideoData();
-    sendState(socket, {
-      videoId: data.video_id,
-      trackName: data.title || '',
-      position: player.getCurrentTime ? player.getCurrentTime() : 0,
-      isPlaying: player.getPlayerState() === window.YT.PlayerState.PLAYING,
-    });
-  }
-
-  function stopSharing() {
-    clearInterval(writeTimerRef.current);
-    writeTimerRef.current = null;
-    socketRef.current?.close();
-    socketRef.current = null;
-    modeRef.current = 'idle';
-    shareCodeRef.current = null;
-    setShareLink(null);
-  }
-
-  // ---- Share Vibe: listener side ----
+  // preview a room from an incoming ?vibe= link — connected, but not yet
+  // controlling (autoplay policy needs a real user gesture, via Join & Play)
   function checkIncomingLink() {
     const params = new URLSearchParams(location.search);
     const code = params.get('vibe');
     if (!code) return;
 
+    roomCodeRef.current = code;
+    roomModeRef.current = 'preview';
+
     const timeout = setTimeout(() => {
       setVibeBanner({ text: 'This vibe has ended.', showJoin: false, code });
     }, 1500);
-    let gotState = false;
 
-    // stays open — joinVibe() reuses this same connection instead of
-    // reopening a new one (Supabase doesn't like two channels racing on
-    // the same topic name while the old one is still tearing down)
-    const socket = joinRoom(code, (state) => {
-      if (modeRef.current === 'listening') return; // joinVibe's own handler takes over
+    const socket = joinRoom(code, (msg) => {
       clearTimeout(timeout);
-      gotState = true;
-      if (!state || Date.now() - state.updatedAt > STALE_MS) {
-        setVibeBanner({ text: 'This vibe has ended.', showJoin: false, code });
-        return;
-      }
-      setVibeBanner({
-        text: `Someone's listening to ${state.trackName || 'a track'} — ${fmtTime(state.position)}`,
-        showJoin: true,
-        code,
-      });
+      handleRoomMessage(msg);
     });
-    previewSocketRef.current = socket;
+    socketRef.current = socket;
+    socket.addEventListener('open', () => send(socket, { type: 'request-state' }));
   }
 
+  // promote a previewed room into full symmetric control
   function joinVibe(code) {
-    if (modeRef.current === 'sharing') stopSharing();
-    modeRef.current = 'listening';
-    shareCodeRef.current = code;
-
-    let firstMessage = true;
-    function handleState(state) {
-      if (!state) return;
-      if (firstMessage) {
-        firstMessage = false;
-        const expected = state.position + (Date.now() - state.updatedAt) / 1000;
-        lastAppliedVideoIdRef.current = state.videoId;
-        const player = playerRef.current;
-        player.loadVideoById(state.videoId, expected);
-        if (!state.isPlaying) player.pauseVideo();
-        return;
-      }
-      applyRemoteState(state);
-    }
-
-    if (previewSocketRef.current) {
-      socketRef.current = previewSocketRef.current;
-      previewSocketRef.current = null;
-      socketRef.current.addEventListener('message', (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          if (msg.type === 'state') handleState(msg.state);
-        } catch (_) {}
-      });
-    } else {
-      socketRef.current = joinRoom(code, handleState);
-    }
-
+    roomModeRef.current = 'active';
+    if (lastKnownStateRef.current) applyRemoteState(lastKnownStateRef.current);
+    writeTimerRef.current = setInterval(broadcastState, WRITE_INTERVAL_MS);
     setVibeBanner((prev) => (prev ? { ...prev, showJoin: false } : prev));
   }
 
-  function applyRemoteState(state) {
-    if (modeRef.current !== 'listening' || !state) return;
-    const player = playerRef.current;
-
-    if (Date.now() - state.updatedAt > STALE_MS) {
-      setVibeBanner((prev) => (prev ? { ...prev, text: 'This vibe has ended.' } : prev));
-      return;
-    }
-
-    if (state.videoId !== lastAppliedVideoIdRef.current) {
-      lastAppliedVideoIdRef.current = state.videoId;
-      player.loadVideoById(state.videoId, state.position);
-      setVibeBanner((prev) =>
-        prev ? { ...prev, text: `Someone's listening to ${state.trackName || 'a track'} — ${fmtTime(state.position)}` } : prev
-      );
-      return;
-    }
-
-    const playingNow = player.getPlayerState() === window.YT.PlayerState.PLAYING;
-    if (state.isPlaying && !playingNow) player.playVideo();
-    if (!state.isPlaying && playingNow) player.pauseVideo();
-
-    const expected = state.position + (Date.now() - state.updatedAt) / 1000;
-    const actual = player.getCurrentTime ? player.getCurrentTime() : 0;
-    if (Math.abs(expected - actual) > DRIFT_THRESHOLD_S) {
-      player.seekTo(expected, true);
-    }
-  }
-
-  function stopListening() {
+  function leaveRoom() {
+    clearInterval(writeTimerRef.current);
+    writeTimerRef.current = null;
     socketRef.current?.close();
     socketRef.current = null;
-    previewSocketRef.current?.close();
-    previewSocketRef.current = null;
-    modeRef.current = 'idle';
-    shareCodeRef.current = null;
+    roomModeRef.current = 'off';
+    roomCodeRef.current = null;
+    lastKnownStateRef.current = null;
+    setShareLink(null);
   }
 
   function dismissBanner() {
     setVibeBanner(null);
-    stopListening();
+    if (roomModeRef.current !== 'active') leaveRoom();
   }
 
   function copyLink() {
@@ -518,7 +539,7 @@ export default function Player() {
         <div className="share-toast glass">
           <input type="text" value={shareLink} readOnly onFocus={(e) => e.target.select()} />
           <button className="pill-btn" onClick={copyLink}>Copy</button>
-          <button className="icon-btn" onClick={stopSharing}>✕</button>
+          <button className="icon-btn" onClick={leaveRoom}>✕</button>
         </div>
       )}
 
