@@ -20,7 +20,7 @@ export default function PlayerBar({
   return (
     <footer className="playerbar-wrap">
       <div className="playerbar glass">
-        <div className="playerbar-controls-row">
+        <div className="playerbar-identity-row">
           <div className="thumb">
             {thumb ? <img src={thumb} alt="" /> : <IconMusicNote className="thumb-fallback" width={18} height={18} />}
           </div>
@@ -28,7 +28,9 @@ export default function PlayerBar({
             <div className="track-title">{trackTitle}</div>
             <div className="track-author">{trackAuthor || 'YouTube'}</div>
           </div>
+        </div>
 
+        <div className="playerbar-buttons-row">
           <button className="bar-icon-btn" onClick={onPrev} title="Previous">
             <IconSkipBack width={16} height={16} />
           </button>
