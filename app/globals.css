@@ -30,19 +30,24 @@ body {
   flex-direction: column;
 }
 
-.bg-stage {
+.bg-layer {
+  position: fixed;
+  inset: 0;
+  z-index: -3;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 1.6s ease;
+}
+
+.bg-layer.visible {
+  opacity: 1;
+}
+
+.bg-scrim {
   position: fixed;
   inset: 0;
   z-index: -2;
-  background-size: cover;
-  background-position: center;
-  transition: background-image 0.9s ease;
-}
-
-.bg-stage::after {
-  content: '';
-  position: absolute;
-  inset: 0;
   background: linear-gradient(180deg, rgba(8, 5, 3, 0.55) 0%, rgba(8, 5, 3, 0.35) 40%, rgba(6, 4, 2, 0.85) 100%);
 }
 

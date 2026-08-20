@@ -11,17 +11,13 @@ const CATEGORIES = [
   { label: 'Workout', playlist: 'PLACEHOLDER_WORKOUT' },
 ];
 
-// each bg paired with an accent pulled to match its own vibe
-const SCENES = [
-  { image: '/bg/bg1.png', accent: '#e2a63b' },
-  { image: '/bg/bg2.png', accent: '#e8c34a' },
-  { image: '/bg/bg3.png', accent: '#e98a72' },
-  { image: '/bg/bg4.png', accent: '#8a9b5e' },
-];
+// accents cycle independently of how many bg images actually exist
+const ACCENTS = ['#e2a63b', '#e8c34a', '#e98a72', '#8a9b5e', '#c9a0dc', '#7fb8b0'];
 
 export default function Player() {
   const playerRef = useRef(null);
   const socketRef = useRef(null);
+  const previewSocketRef = useRef(null);
   const modeRef = useRef('idle'); // idle | sharing | listening
   const shareCodeRef = useRef(null);
   const writeTimerRef = useRef(null);
@@ -29,6 +25,8 @@ export default function Player() {
   const seekDraggingRef = useRef(false);
   const lastVideoIdRef = useRef(null);
   const sceneIdxRef = useRef(0);
+  const bgImagesRef = useRef([]);
+  const frontLayerRef = useRef('a');
 
   const [activeCategory, setActiveCategory] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -40,11 +38,15 @@ export default function Player() {
   const [shareLink, setShareLink] = useState(null);
   const [vibeBanner, setVibeBanner] = useState(null); // { text, showJoin, code }
   const [sceneIdx, setSceneIdx] = useState(0);
+  const [bgImages, setBgImages] = useState([]);
+  const [frontLayer, setFrontLayer] = useState('a'); // which layer is visible: 'a' | 'b'
+  const [layerAImage, setLayerAImage] = useState(null);
+  const [layerBImage, setLayerBImage] = useState(null);
   const [playlistCache, setPlaylistCache] = useState({}); // idx -> 'loading' | [{videoId,title}]
   const [moodOpen, setMoodOpen] = useState(false);
   const [modalCategory, setModalCategory] = useState(0);
 
-  const scene = SCENES[sceneIdx];
+  const accent = ACCENTS[sceneIdx % ACCENTS.length];
 
   useEffect(() => {
     function onKeyDown(e) {
@@ -54,18 +56,45 @@ export default function Player() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, []);
 
+  // discover bg images at runtime — folder is the source of truth, no
+  // hardcoded list, any count, any names following bgN.<ext>
+  useEffect(() => {
+    fetch('/api/bg-images')
+      .then((r) => r.json())
+      .then((images) => {
+        if (!images.length) return;
+        bgImagesRef.current = images;
+        setBgImages(images);
+        setLayerAImage(images[0]);
+      })
+      .catch(() => {});
+  }, []);
+
+  // reads/writes via refs — called from the YT player's onStateChange,
+  // which is registered once and would otherwise close over stale state
   function nextScene() {
-    sceneIdxRef.current = (sceneIdxRef.current + 1) % SCENES.length;
+    const images = bgImagesRef.current;
+    if (!images.length) return;
+    sceneIdxRef.current = (sceneIdxRef.current + 1) % images.length;
     setSceneIdx(sceneIdxRef.current);
+    const nextImage = images[sceneIdxRef.current];
+    if (frontLayerRef.current === 'a') {
+      setLayerBImage(nextImage);
+      setFrontLayer('b');
+      frontLayerRef.current = 'b';
+    } else {
+      setLayerAImage(nextImage);
+      setFrontLayer('a');
+      frontLayerRef.current = 'a';
+    }
   }
 
   // ---- YT bootstrap ----
   useEffect(() => {
-    const tag = document.createElement('script');
-    tag.src = 'https://www.youtube.com/iframe_api';
-    document.body.appendChild(tag);
+    let cancelled = false; // guards against React StrictMode's double-invoke in dev
 
-    window.onYouTubeIframeAPIReady = () => {
+    function createPlayer() {
+      if (cancelled) return;
       const player = new window.YT.Player('yt-audio', {
         height: '1',
         width: '1',
@@ -83,7 +112,23 @@ export default function Player() {
         },
       });
       playerRef.current = player;
-    };
+    }
+
+    if (window.YT && window.YT.Player) {
+      // API already loaded by an earlier (possibly StrictMode-cancelled) mount
+      createPlayer();
+    } else {
+      if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+        const tag = document.createElement('script');
+        tag.src = 'https://www.youtube.com/iframe_api';
+        document.body.appendChild(tag);
+      }
+      const prev = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        prev?.();
+        createPlayer();
+      };
+    }
 
     const seekInterval = setInterval(() => {
       const player = playerRef.current;
@@ -116,6 +161,7 @@ export default function Player() {
     window.addEventListener('keydown', onKeyDown);
 
     return () => {
+      cancelled = true;
       clearInterval(seekInterval);
       window.removeEventListener('keydown', onKeyDown);
     };
@@ -280,10 +326,15 @@ export default function Player() {
     const timeout = setTimeout(() => {
       setVibeBanner({ text: 'This vibe has ended.', showJoin: false, code });
     }, 1500);
+    let gotState = false;
 
+    // stays open — joinVibe() reuses this same connection instead of
+    // reopening a new one (Supabase doesn't like two channels racing on
+    // the same topic name while the old one is still tearing down)
     const socket = joinRoom(code, (state) => {
+      if (modeRef.current === 'listening') return; // joinVibe's own handler takes over
       clearTimeout(timeout);
-      socket.close(); // this was just a peek — joinVibe() opens the real listening socket
+      gotState = true;
       if (!state || Date.now() - state.updatedAt > STALE_MS) {
         setVibeBanner({ text: 'This vibe has ended.', showJoin: false, code });
         return;
@@ -294,6 +345,7 @@ export default function Player() {
         code,
       });
     });
+    previewSocketRef.current = socket;
   }
 
   function joinVibe(code) {
@@ -302,7 +354,7 @@ export default function Player() {
     shareCodeRef.current = code;
 
     let firstMessage = true;
-    const socket = joinRoom(code, (state) => {
+    function handleState(state) {
       if (!state) return;
       if (firstMessage) {
         firstMessage = false;
@@ -314,8 +366,20 @@ export default function Player() {
         return;
       }
       applyRemoteState(state);
-    });
-    socketRef.current = socket;
+    }
+
+    if (previewSocketRef.current) {
+      socketRef.current = previewSocketRef.current;
+      previewSocketRef.current = null;
+      socketRef.current.addEventListener('message', (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'state') handleState(msg.state);
+        } catch (_) {}
+      });
+    } else {
+      socketRef.current = joinRoom(code, handleState);
+    }
 
     setVibeBanner((prev) => (prev ? { ...prev, showJoin: false } : prev));
   }
@@ -352,6 +416,8 @@ export default function Player() {
   function stopListening() {
     socketRef.current?.close();
     socketRef.current = null;
+    previewSocketRef.current?.close();
+    previewSocketRef.current = null;
     modeRef.current = 'idle';
     shareCodeRef.current = null;
   }
@@ -367,8 +433,16 @@ export default function Player() {
   }
 
   return (
-    <div className="root" style={{ '--accent': scene.accent }}>
-      <div className="bg-stage" style={{ backgroundImage: `url(${scene.image})` }} />
+    <div className="root" style={{ '--accent': accent }}>
+      <div
+        className={`bg-layer ${frontLayer === 'a' ? 'visible' : ''}`}
+        style={{ backgroundImage: layerAImage ? `url(${layerAImage})` : 'none' }}
+      />
+      <div
+        className={`bg-layer ${frontLayer === 'b' ? 'visible' : ''}`}
+        style={{ backgroundImage: layerBImage ? `url(${layerBImage})` : 'none' }}
+      />
+      <div className="bg-scrim" />
 
       <header className="topbar">
         <div className="brand">
