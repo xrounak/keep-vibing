@@ -6,9 +6,9 @@ import { joinRoom, send, genCode, fmtTime, WRITE_INTERVAL_MS, STALE_MS, DRIFT_TH
 // TODO: replace remaining placeholders with real official-label playlist IDs
 const CATEGORIES = [
   { label: '90s', playlist: 'RDCPgD-SQ1fJ8' },
-  { label: 'Punjabi', playlist: 'PLACEHOLDER_PUNJABI' },
-  { label: 'Haryanvi', playlist: 'PLACEHOLDER_HARYANVI' },
-  { label: 'Workout', playlist: 'PLACEHOLDER_WORKOUT' },
+  // { label: 'Punjabi', playlist: 'PLACEHOLDER_PUNJABI' },
+  // { label: 'Haryanvi', playlist: 'PLACEHOLDER_HARYANVI' },
+  // { label: 'Workout', playlist: 'PLACEHOLDER_WORKOUT' },
 ];
 
 // accents cycle independently of how many bg images actually exist
@@ -269,9 +269,9 @@ export default function Player() {
             `https://www.youtube.com/oembed?url=https://youtube.com/watch?v=${videoId}&format=json`
           );
           const data = await res.json();
-          return { videoId, title: data.title || videoId };
+          return { videoId, title: data.title || videoId, author: data.author_name || '' };
         } catch (_) {
-          return { videoId, title: videoId };
+          return { videoId, title: videoId, author: '' };
         }
       })
     );
@@ -521,15 +521,28 @@ export default function Player() {
                 <div className="track-menu-empty">No tracks found.</div>
               )}
               {Array.isArray(playlistCache[modalCategory]) &&
-                playlistCache[modalCategory].map((t, trackIdx) => (
-                  <button
-                    key={t.videoId + trackIdx}
-                    className="track-menu-item"
-                    onClick={() => playTrackAt(modalCategory, trackIdx)}
-                  >
-                    {t.title}
-                  </button>
-                ))}
+                playlistCache[modalCategory].map((t, trackIdx) => {
+                  const isPlayingTrack = modalCategory === activeCategory && t.videoId === lastAppliedVideoIdRef.current;
+                  return (
+                    <button
+                      key={t.videoId + trackIdx}
+                      className={`track-menu-item ${isPlayingTrack ? 'playing' : ''}`}
+                      onClick={() => playTrackAt(modalCategory, trackIdx)}
+                    >
+                      <span className="track-menu-num">{isPlayingTrack ? '♪' : trackIdx + 1}</span>
+                      <img
+                        className="track-menu-thumb"
+                        src={`https://i.ytimg.com/vi/${t.videoId}/default.jpg`}
+                        alt=""
+                        loading="lazy"
+                      />
+                      <span className="track-menu-info">
+                        <span className="track-menu-title">{t.title}</span>
+                        <span className="track-menu-subtitle">{t.author || 'YouTube'}</span>
+                      </span>
+                    </button>
+                  );
+                })}
             </div>
           </div>
         </div>
