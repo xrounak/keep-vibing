@@ -453,6 +453,114 @@ body {
   color: var(--cream);
 }
 
+/* ---- install-to-home-screen prompt ---- */
+.install-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 4, 2, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 250;
+  padding: 1.25rem;
+}
+
+.install-modal {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  border-radius: 20px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  text-align: center;
+  animation: install-drop-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+@keyframes install-drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-18px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.install-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+}
+
+.install-modal h3 {
+  font-size: 1.05rem;
+  font-weight: 800;
+  margin-top: 0.3rem;
+}
+
+.install-modal p {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: rgba(245, 234, 210, 0.75);
+}
+
+.install-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 0.3rem;
+}
+
+.install-credit {
+  font-size: 0.68rem !important;
+  color: rgba(245, 234, 210, 0.4) !important;
+  margin-top: 0.2rem;
+}
+
+/* ---- instagram badge — quiet, corner, never blocks anything ---- */
+.insta-badge {
+  position: fixed;
+  left: 1rem;
+  bottom: 8.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  color: var(--cream);
+  text-decoration: none;
+  font-size: 0.72rem;
+  font-weight: 600;
+  z-index: 60;
+  opacity: 0;
+  transform: translateY(8px) scale(0.94);
+  pointer-events: none;
+  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.insta-badge.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.insta-badge:hover {
+  color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .insta-badge {
+    bottom: 14rem;
+    font-size: 0.68rem;
+  }
+}
+
 .pill-btn {
   display: inline-flex;
   align-items: center;

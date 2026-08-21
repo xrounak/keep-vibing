@@ -8,6 +8,8 @@ import MoodModal from './components/MoodModal';
 import VibeBanner from './components/VibeBanner';
 import ShareModal from './components/ShareModal';
 import PlayerBar from './components/PlayerBar';
+import InstallPrompt from './components/InstallPrompt';
+import InstaBadge from './components/InstaBadge';
 import playlistsData from './playlists.json';
 
 // mini "database" of playlists — edit app/playlists.json to add/remove
@@ -134,6 +136,17 @@ export default function Player() {
         },
       });
       playerRef.current = player;
+
+      // lock-screen / notification-shade media controls, and a nudge for
+      // some mobile browsers (mainly Android Chrome) to keep treating this
+      // tab as active media playback rather than throttling it in the
+      // background — iOS Safari stays unreliable for iframe audio regardless
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.setActionHandler('play', () => playerRef.current?.playVideo());
+        navigator.mediaSession.setActionHandler('pause', () => playerRef.current?.pauseVideo());
+        navigator.mediaSession.setActionHandler('previoustrack', () => prevTrack());
+        navigator.mediaSession.setActionHandler('nexttrack', () => nextTrack());
+      }
     }
 
     if (window.YT && window.YT.Player) {
@@ -204,9 +217,12 @@ export default function Player() {
           lastVideoIdRef.current = data.video_id;
           nextScene();
         }
+        updateMediaSession(data);
       } catch (_) {}
+      setMediaSessionState('playing');
     } else if (e.data === window.YT.PlayerState.PAUSED) {
       setIsPlaying(false);
+      setMediaSessionState('paused');
     } else if (e.data === window.YT.PlayerState.ENDED && loopModeRef.current === 'song') {
       // YT has no native single-video-loop toggle — replay it ourselves.
       // The resulting PLAYING event covers the room broadcast, so return early.
@@ -225,6 +241,19 @@ export default function Player() {
         if (!applyingRemoteRef.current) broadcastState();
       }, 250);
     }
+  }
+
+  function updateMediaSession(videoData) {
+    if (!('mediaSession' in navigator) || !videoData.video_id) return;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: videoData.title || 'Raat Ka Safar',
+      artist: videoData.author || '',
+      artwork: [{ src: `https://i.ytimg.com/vi/${videoData.video_id}/hqdefault.jpg`, sizes: '480x360', type: 'image/jpeg' }],
+    });
+  }
+
+  function setMediaSessionState(state) {
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = state;
   }
 
   // ---- controls ----
@@ -554,6 +583,9 @@ export default function Player() {
         onSeekCommit={onSeekCommit}
         onSeekDragStart={() => (seekDraggingRef.current = true)}
       />
+
+      <InstallPrompt />
+      <InstaBadge />
     </div>
   );
 }
