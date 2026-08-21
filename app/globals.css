@@ -523,41 +523,45 @@ body {
   margin-top: 0.2rem;
 }
 
-/* ---- instagram badge — quiet, corner, never blocks anything ---- */
-.insta-badge {
+/* ---- spinning disc — corner vinyl, links to instagram ---- */
+.spinning-disc {
   position: fixed;
   left: 1rem;
   bottom: 8.5rem;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.45rem 0.85rem;
-  border-radius: 999px;
-  color: var(--cream);
-  text-decoration: none;
-  font-size: 0.72rem;
-  font-weight: 600;
   z-index: 60;
-  opacity: 0;
-  transform: translateY(8px) scale(0.94);
-  pointer-events: none;
-  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  display: block;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.45), 0 0 0 3px rgba(255, 255, 255, 0.08),
+    inset 0 0 0 6px rgba(0, 0, 0, 0.55);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.insta-badge.visible {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  pointer-events: auto;
+.spinning-disc img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: disc-spin 6s linear infinite;
 }
 
-.insta-badge:hover {
-  color: var(--accent);
+.spinning-disc:hover {
+  transform: scale(1.08);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.55), 0 0 0 3px color-mix(in srgb, var(--accent) 50%, transparent),
+    inset 0 0 0 6px rgba(0, 0, 0, 0.55);
+}
+
+@keyframes disc-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 @media (max-width: 640px) {
-  .insta-badge {
+  .spinning-disc {
     bottom: 14rem;
-    font-size: 0.68rem;
+    width: 38px;
+    height: 38px;
   }
 }
 
