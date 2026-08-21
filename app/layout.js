@@ -1,4 +1,4 @@
-import { Poppins, Baloo_Bhai_2 } from "next/font/google";
+import { Poppins, Yatra_One } from "next/font/google";
 import "./globals.css";
 
 const poppins = Poppins({
@@ -7,10 +7,12 @@ const poppins = Poppins({
   weight: ["500", "700", "800", "900"],
 });
 
-const balooBhai2 = Baloo_Bhai_2({
+// bolder, more hand-drawn/decorative Devanagari — matches the chunky
+// tilted-letterform look of the busdriver.wtf-style reference
+const yatraOne = Yatra_One({
   variable: "--font-hindi",
   subsets: ["devanagari"],
-  weight: ["600", "700", "800"],
+  weight: ["400"],
 });
 
 export const metadata = {
@@ -20,7 +22,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={`${poppins.variable} ${balooBhai2.variable}`}>
+    <html lang="en" className={`${poppins.variable} ${yatraOne.variable}`}>
       <body>{children}</body>
     </html>
   );
