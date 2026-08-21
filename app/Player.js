@@ -9,7 +9,6 @@ import VibeBanner from './components/VibeBanner';
 import ShareModal from './components/ShareModal';
 import PlayerBar from './components/PlayerBar';
 import InstallPrompt from './components/InstallPrompt';
-import SpinningDisc from './components/SpinningDisc';
 import playlistsData from './playlists.json';
 
 // mini "database" of playlists — edit app/playlists.json to add/remove
@@ -585,7 +584,6 @@ export default function Player() {
       />
 
       <InstallPrompt />
-      <SpinningDisc />
     </div>
   );
 }
