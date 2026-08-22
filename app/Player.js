@@ -407,7 +407,14 @@ export default function Player() {
   }
 
   function playTrackAt(idx, trackIdx) {
-    playerRef.current?.playVideoAt(trackIdx);
+    // playVideoAt(trackIdx) alone plays by index within whatever the main
+    // player *currently* has loaded — if selectCategory()'s loadPlaylist()
+    // for this category hasn't finished swapping over yet (it's async),
+    // the index lands on the previous playlist instead. Loading the target
+    // playlist and index together in one call avoids that race entirely.
+    activeCategoryRef.current = idx;
+    setActiveCategory(idx);
+    playerRef.current?.loadPlaylist({ listType: 'playlist', list: CATEGORIES[idx].playlistId, index: trackIdx });
     setMoodOpen(false);
   }
 
