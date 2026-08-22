@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { joinRoom, send, genCode, fmtTime, WRITE_INTERVAL_MS, STALE_MS, DRIFT_THRESHOLD_S } from './vibeStore';
-import BackgroundLayers from './components/BackgroundLayers';
+import BackgroundVideo from './components/BackgroundVideo';
 import TopBar from './components/TopBar';
 import MoodModal from './components/MoodModal';
 import VibeBanner from './components/VibeBanner';
@@ -34,12 +34,12 @@ export default function Player() {
   const seekDraggingRef = useRef(false);
   const lastVideoIdRef = useRef(null);
   const sceneIdxRef = useRef(0);
-  const bgImagesRef = useRef([]);
-  const frontLayerRef = useRef('a');
   const activeCategoryRef = useRef(0);
   const loopModeRef = useRef('playlist'); // 'song' | 'playlist' | 'shuffle' — read inside the once-registered YT event handler
   const fetcherPlayerRef = useRef(null); // separate hidden player dedicated to playlist track-list lookups, never used for playback — rebuilt fresh per fetch
   const fetchQueueRef = useRef(Promise.resolve()); // serializes fetches so rebuilds can't race each other
+  const playlistCacheRef = useRef({}); // mirror of playlistCache, read synchronously so rapid taps can't double-fetch the same category
+  const switchTimerRef = useRef(null); // poll driving playlist-switch retries and the loop/shuffle re-arm
 
   const [activeCategory, setActiveCategory] = useState(0);
   const [loopMode, setLoopMode] = useState('playlist');
@@ -52,13 +52,11 @@ export default function Player() {
   const [shareLink, setShareLink] = useState(null);
   const [vibeBanner, setVibeBanner] = useState(null); // { text, showJoin, code }
   const [sceneIdx, setSceneIdx] = useState(0);
-  const [bgImages, setBgImages] = useState([]);
-  const [frontLayer, setFrontLayer] = useState('a'); // which layer is visible: 'a' | 'b'
-  const [layerAImage, setLayerAImage] = useState(null);
-  const [layerBImage, setLayerBImage] = useState(null);
   const [playlistCache, setPlaylistCache] = useState({}); // idx -> 'loading' | [{videoId,title}]
   const [moodOpen, setMoodOpen] = useState(false);
-  const [modalCategory, setModalCategory] = useState(0);
+  // render-visible mirror of lastAppliedVideoIdRef — a ref alone can't drive
+  // the modal's "now playing" highlight, since mutating it doesn't re-render
+  const [nowPlayingId, setNowPlayingId] = useState(null);
 
   const accent = ACCENTS[sceneIdx % ACCENTS.length];
 
@@ -70,37 +68,12 @@ export default function Player() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  // discover bg images at runtime — folder is the source of truth, no
-  // hardcoded list, any count, any names following bgN.<ext>
-  useEffect(() => {
-    fetch('/api/bg-images')
-      .then((r) => r.json())
-      .then((images) => {
-        if (!images.length) return;
-        bgImagesRef.current = images;
-        setBgImages(images);
-        setLayerAImage(images[0]);
-      })
-      .catch(() => {});
-  }, []);
-
-  // reads/writes via refs — called from the YT player's onStateChange,
-  // which is registered once and would otherwise close over stale state
+  // accent color still cycles per track (background is now a fixed looping
+  // video, not per-track images) — read/written via ref since this is
+  // called from the YT player's onStateChange, registered once
   function nextScene() {
-    const images = bgImagesRef.current;
-    if (!images.length) return;
-    sceneIdxRef.current = (sceneIdxRef.current + 1) % images.length;
+    sceneIdxRef.current = (sceneIdxRef.current + 1) % ACCENTS.length;
     setSceneIdx(sceneIdxRef.current);
-    const nextImage = images[sceneIdxRef.current];
-    if (frontLayerRef.current === 'a') {
-      setLayerBImage(nextImage);
-      setFrontLayer('b');
-      frontLayerRef.current = 'b';
-    } else {
-      setLayerAImage(nextImage);
-      setFrontLayer('a');
-      frontLayerRef.current = 'a';
-    }
   }
 
   // ---- YT bootstrap ----
@@ -213,7 +186,10 @@ export default function Player() {
         setTrackTitle(data.title || 'Playing…');
         setTrackAuthor(data.author || '');
         setThumb(data.video_id ? `https://i.ytimg.com/vi/${data.video_id}/default.jpg` : null);
-        if (data.video_id) lastAppliedVideoIdRef.current = data.video_id;
+        if (data.video_id) {
+          lastAppliedVideoIdRef.current = data.video_id;
+          setNowPlayingId(data.video_id);
+        }
         if (data.video_id && data.video_id !== lastVideoIdRef.current) {
           lastVideoIdRef.current = data.video_id;
           nextScene();
@@ -283,14 +259,86 @@ export default function Player() {
     loopModeRef.current = next;
     setLoopMode(next);
 
+    applyPlaybackModes();
+  }
+
+  // native loop/shuffle cover playlist & shuffle modes; song mode is handled
+  // by replaying on ENDED (see onPlayerStateChange) — keep native loop on
+  // regardless, as a safety net against ever falling into YouTube's own
+  // recommendation autoplay. Must be re-applied after *every* loadPlaylist:
+  // YouTube resets both flags when a new playlist is loaded, which silently
+  // left shuffle mode not actually shuffling after a category switch.
+  function applyPlaybackModes() {
+    const player = playerRef.current;
+    if (!player || !player.setLoop) return;
+    player.setLoop(true);
+    player.setShuffle(loopModeRef.current === 'shuffle');
+  }
+
+  // Switching playlists is not just loadPlaylist(): with loop enabled (either
+  // the loop:1 playerVar or setLoop(true)) YouTube reverts any newly loaded
+  // playlist back to the one the player was constructed with. getVideoData().list
+  // updates to the new id, but getPlaylist() and playback stay on the original —
+  // which is why picking a mood other than the first one silently kept playing
+  // the first one. Verified in-page: with loop off the same call swaps
+  // correctly, and re-arming loop afterwards sticks.
+  // Switching playlists is not a plain loadPlaylist() call. Two verified
+  // YouTube IFrame quirks get in the way, both silent — no error, no event,
+  // getVideoData().list even flips to the new id while getPlaylist() and
+  // actual playback stay on the old one:
+  //   1. the first loadPlaylist() issued on a freshly constructed player is
+  //      dropped; an identical second call lands. Hence the retries below.
+  //   2. with loop enabled (the loop:1 playerVar or setLoop(true)) a pending
+  //      load gets reverted to the playlist the player started with — which
+  //      is why every mood other than the first one kept playing the first
+  //      one. So loop goes off for the swap and is re-armed only once the
+  //      new playlist has actually landed.
+  function switchPlaylist(playlistId, index, startSeconds) {
     const player = playerRef.current;
     if (!player) return;
-    // native loop/shuffle cover playlist & shuffle modes; song mode is
-    // handled by replaying on ENDED (see onPlayerStateChange) — keep
-    // native loop on regardless, as a safety net against ever falling
-    // into YouTube's own recommendation autoplay
-    player.setLoop(true);
-    player.setShuffle(next === 'shuffle');
+
+    const firstOf = () => ((player.getPlaylist && player.getPlaylist()) || [])[0];
+    const before = firstOf();
+    const issuedAt = Date.now();
+
+    player.setLoop(false);
+
+    const issue = () => {
+      const args = { listType: 'playlist', list: playlistId, index: index || 0 };
+      // keep a room-synced start position honest across retries
+      if (startSeconds !== undefined) args.startSeconds = startSeconds + (Date.now() - issuedAt) / 1000;
+      player.loadPlaylist(args);
+      // loadPlaylist doesn't reliably auto-resume on a player constructed
+      // with autoplay:0 (the ?vibe= landing case) — ask for it explicitly
+      player.playVideo();
+    };
+    issue();
+
+    clearTimeout(switchTimerRef.current);
+    let ticks = 0;
+    let retries = 4;
+    const check = () => {
+      if (firstOf() !== before) {
+        applyPlaybackModes();
+        return;
+      }
+      ticks += 1;
+      if (ticks >= 20) {
+        applyPlaybackModes(); // give up quietly; player stays on the old playlist
+        return;
+      }
+      if (ticks % 4 === 0 && retries-- > 0) issue();
+      switchTimerRef.current = setTimeout(check, 400);
+    };
+    switchTimerRef.current = setTimeout(check, 400);
+  }
+
+  // a deliberate local action must win over an in-flight remote apply —
+  // otherwise the suppression window swallows our own broadcast and the
+  // rest of the room never hears about the change
+  function beginLocalAction() {
+    clearTimeout(applyingRemoteTimeoutRef.current);
+    applyingRemoteRef.current = false;
   }
 
   function onSeekChange(e) {
@@ -306,53 +354,85 @@ export default function Player() {
     if (roomModeRef.current === 'active') broadcastState(val);
   }
 
-  function selectCategory(idx) {
-    activeCategoryRef.current = idx;
-    setActiveCategory(idx);
-    playerRef.current?.loadPlaylist({ listType: 'playlist', list: CATEGORIES[idx].playlistId });
-  }
-
   function openMoodModal() {
     setMoodOpen(true);
-    selectModalCategory(activeCategory);
+    loadPlaylistTracks(activeCategoryRef.current);
   }
 
-  function selectModalCategory(idx) {
-    setModalCategory(idx);
-    if (idx !== activeCategory) selectCategory(idx);
+  // Tapping a mood chip switches the playing playlist — that is the whole
+  // point of the control. There used to be a second "modalCategory" that only
+  // previewed a category's tracks without touching playback, which meant the
+  // chips looked like a playlist switcher but weren't one, and every chip
+  // carried two overlapping highlight states. One category now, one meaning.
+  function selectCategory(idx) {
     loadPlaylistTracks(idx);
+    if (idx === activeCategoryRef.current) return;
+
+    activeCategoryRef.current = idx;
+    setActiveCategory(idx);
+    beginLocalAction();
+
+    switchPlaylist(CATEGORIES[idx].playlistId, 0);
+  }
+
+  function setCacheEntry(idx, value) {
+    playlistCacheRef.current = { ...playlistCacheRef.current, [idx]: value };
+    setPlaylistCache(playlistCacheRef.current);
+  }
+
+  function clearCacheEntry(idx) {
+    const next = { ...playlistCacheRef.current };
+    delete next[idx];
+    playlistCacheRef.current = next;
+    setPlaylistCache(next);
   }
 
   async function loadPlaylistTracks(idx) {
-    if (playlistCache[idx] !== undefined) return; // already resolved (or resolving) for this category
-    setPlaylistCache((prev) => ({ ...prev, [idx]: 'loading' }));
+    // read through the ref, not the state: two taps in the same render pass
+    // both saw a stale `playlistCache` and fired duplicate fetches
+    if (playlistCacheRef.current[idx] !== undefined) return; // already resolved (or resolving)
+    setCacheEntry(idx, 'loading');
 
-    const ids = await enqueuePlaylistFetch(CATEGORIES[idx].playlistId);
-    if (!ids || !ids.length) {
-      setPlaylistCache((prev) => ({ ...prev, [idx]: [] }));
-      return;
+    try {
+      const ids = await enqueuePlaylistFetch(CATEGORIES[idx].playlistId);
+      if (!ids || !ids.length) {
+        // 'error', not []: an empty array is still `undefined`-free, so the
+        // early-return above made a single failed lookup permanent for the
+        // whole session with no way to retry
+        setCacheEntry(idx, 'error');
+        return;
+      }
+
+      const tracks = await Promise.all(
+        ids.slice(0, 25).map(async (videoId) => {
+          try {
+            const res = await fetch(
+              `https://www.youtube.com/oembed?url=https://youtube.com/watch?v=${videoId}&format=json`
+            );
+            const data = await res.json();
+            return { videoId, title: data.title || videoId, author: data.author_name || '' };
+          } catch (_) {
+            return { videoId, title: videoId, author: '' };
+          }
+        })
+      );
+      setCacheEntry(idx, tracks);
+    } catch (_) {
+      // without this the entry stayed 'loading' forever and the spinner never
+      // resolved, with no way to retry
+      setCacheEntry(idx, 'error');
     }
+  }
 
-    const tracks = await Promise.all(
-      ids.slice(0, 25).map(async (videoId) => {
-        try {
-          const res = await fetch(
-            `https://www.youtube.com/oembed?url=https://youtube.com/watch?v=${videoId}&format=json`
-          );
-          const data = await res.json();
-          return { videoId, title: data.title || videoId, author: data.author_name || '' };
-        } catch (_) {
-          return { videoId, title: videoId, author: '' };
-        }
-      })
-    );
-    setPlaylistCache((prev) => ({ ...prev, [idx]: tracks }));
+  function retryPlaylistTracks(idx) {
+    clearCacheEntry(idx);
+    loadPlaylistTracks(idx);
   }
 
   // Track-list lookups used to poll the *live playback player*'s
-  // getPlaylist(), which raced against selectCategory()'s own
-  // loadPlaylist() call on the same player — switching categories quickly
-  // could catch the player still holding the previous playlist's (non-
+  // getPlaylist(), which raced against the main player's own loadPlaylist()
+  // call whenever a category switch also changed playback — switching
+  // categories quickly could catch the player still holding the previous playlist's (non-
   // empty) data and cache that under the wrong category, permanently
   // (an empty [] result is still truthy in JS, so a lost race never
   // retried). First fix used one reused hidden fetcher player, but that
@@ -408,13 +488,13 @@ export default function Player() {
 
   function playTrackAt(idx, trackIdx) {
     // playVideoAt(trackIdx) alone plays by index within whatever the main
-    // player *currently* has loaded — if selectCategory()'s loadPlaylist()
-    // for this category hasn't finished swapping over yet (it's async),
-    // the index lands on the previous playlist instead. Loading the target
-    // playlist and index together in one call avoids that race entirely.
+    // player *currently* has loaded, which may not be this category at all.
+    // Loading the target playlist and index together in one call is correct
+    // regardless of whatever was playing before.
     activeCategoryRef.current = idx;
     setActiveCategory(idx);
-    playerRef.current?.loadPlaylist({ listType: 'playlist', list: CATEGORIES[idx].playlistId, index: trackIdx });
+    beginLocalAction();
+    switchPlaylist(CATEGORIES[idx].playlistId, trackIdx);
     setMoodOpen(false);
   }
 
@@ -490,20 +570,14 @@ export default function Player() {
 
     if (isTrackChange) {
       lastAppliedVideoIdRef.current = state.videoId;
+      setNowPlayingId(state.videoId);
       const expected = state.position + (Date.now() - state.updatedAt) / 1000;
       const category = CATEGORIES[state.categoryIdx] || CATEGORIES[activeCategoryRef.current];
       // loadPlaylist (not loadVideoById) keeps playlist context alive, so
       // Next/Prev keep working for whoever just received this update
-      player.loadPlaylist({
-        listType: 'playlist',
-        list: category.playlistId,
-        index: state.playlistIndex || 0,
-        startSeconds: expected,
-      });
-      // loadPlaylist doesn't reliably auto-resume on a player constructed
-      // with autoplay:0 — call the right one explicitly instead of assuming
-      if (state.isPlaying) player.playVideo();
-      else player.pauseVideo();
+      switchPlaylist(category.playlistId, state.playlistIndex || 0, expected);
+      // switchPlaylist always asks for playback; honour a paused room
+      if (!state.isPlaying) player.pauseVideo();
     } else {
       const playingNow = player.getPlayerState() === window.YT.PlayerState.PLAYING;
       if (state.isPlaying && !playingNow) player.playVideo();
@@ -589,7 +663,7 @@ export default function Player() {
 
   return (
     <div className="root" style={{ '--accent': accent }}>
-      <BackgroundLayers layerAImage={layerAImage} layerBImage={layerBImage} frontLayer={frontLayer} />
+      <BackgroundVideo />
 
       <TopBar onOpenMood={openMoodModal} onOpenShare={startSharing} />
 
@@ -598,11 +672,11 @@ export default function Player() {
         onClose={() => setMoodOpen(false)}
         categories={CATEGORIES}
         activeCategory={activeCategory}
-        modalCategory={modalCategory}
-        onSelectCategory={selectModalCategory}
+        onSelectCategory={selectCategory}
         playlistCache={playlistCache}
-        lastAppliedVideoId={lastAppliedVideoIdRef.current}
+        nowPlayingId={nowPlayingId}
         onPlayTrack={playTrackAt}
+        onRetry={retryPlaylistTracks}
       />
 
       <VibeBanner banner={vibeBanner} onJoin={joinVibe} onDismiss={dismissBanner} />

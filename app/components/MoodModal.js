@@ -5,15 +5,15 @@ export default function MoodModal({
   onClose,
   categories,
   activeCategory,
-  modalCategory,
   onSelectCategory,
   playlistCache,
-  lastAppliedVideoId,
+  nowPlayingId,
   onPlayTrack,
+  onRetry,
 }) {
   if (!open) return null;
 
-  const tracks = playlistCache[modalCategory];
+  const tracks = playlistCache[activeCategory];
 
   return (
     <div className="mood-overlay" onClick={onClose}>
@@ -29,7 +29,7 @@ export default function MoodModal({
           {categories.map((cat, idx) => (
             <button
               key={cat.label}
-              className={`chip ${idx === activeCategory ? 'active' : ''} ${modalCategory === idx ? 'menu-open' : ''}`}
+              className={`chip ${idx === activeCategory ? 'active' : ''}`}
               onClick={() => onSelectCategory(idx)}
             >
               {cat.label}
@@ -39,17 +39,22 @@ export default function MoodModal({
 
         <div className="mood-tracks">
           {tracks === 'loading' && <div className="track-menu-empty">Loading tracks…</div>}
-          {Array.isArray(tracks) && tracks.length === 0 && (
-            <div className="track-menu-empty">No tracks found.</div>
+          {tracks === 'error' && (
+            <div className="track-menu-empty">
+              Couldn’t load this playlist.{' '}
+              <button className="track-menu-retry" onClick={() => onRetry(activeCategory)}>
+                Retry
+              </button>
+            </div>
           )}
           {Array.isArray(tracks) &&
             tracks.map((t, trackIdx) => {
-              const isPlayingTrack = modalCategory === activeCategory && t.videoId === lastAppliedVideoId;
+              const isPlayingTrack = t.videoId === nowPlayingId;
               return (
                 <button
                   key={t.videoId + trackIdx}
                   className={`track-menu-item ${isPlayingTrack ? 'playing' : ''}`}
-                  onClick={() => onPlayTrack(modalCategory, trackIdx)}
+                  onClick={() => onPlayTrack(activeCategory, trackIdx)}
                 >
                   <span className="track-menu-num">
                     {isPlayingTrack ? <IconMusicNote width={13} height={13} /> : trackIdx + 1}
