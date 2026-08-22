@@ -38,6 +38,8 @@ export default function Player() {
   const frontLayerRef = useRef('a');
   const activeCategoryRef = useRef(0);
   const loopModeRef = useRef('playlist'); // 'song' | 'playlist' | 'shuffle' — read inside the once-registered YT event handler
+  const fetcherPlayerRef = useRef(null); // separate hidden player dedicated to playlist track-list lookups, never used for playback — rebuilt fresh per fetch
+  const fetchQueueRef = useRef(Promise.resolve()); // serializes fetches so rebuilds can't race each other
 
   const [activeCategory, setActiveCategory] = useState(0);
   const [loopMode, setLoopMode] = useState('playlist');
@@ -322,10 +324,10 @@ export default function Player() {
   }
 
   async function loadPlaylistTracks(idx) {
-    if (playlistCache[idx]) return; // already loaded or loading
+    if (playlistCache[idx] !== undefined) return; // already resolved (or resolving) for this category
     setPlaylistCache((prev) => ({ ...prev, [idx]: 'loading' }));
 
-    const ids = await waitForPlaylistIds();
+    const ids = await enqueuePlaylistFetch(CATEGORIES[idx].playlistId);
     if (!ids || !ids.length) {
       setPlaylistCache((prev) => ({ ...prev, [idx]: [] }));
       return;
@@ -347,19 +349,60 @@ export default function Player() {
     setPlaylistCache((prev) => ({ ...prev, [idx]: tracks }));
   }
 
-  function waitForPlaylistIds(attempts = 10) {
+  // Track-list lookups used to poll the *live playback player*'s
+  // getPlaylist(), which raced against selectCategory()'s own
+  // loadPlaylist() call on the same player — switching categories quickly
+  // could catch the player still holding the previous playlist's (non-
+  // empty) data and cache that under the wrong category, permanently
+  // (an empty [] result is still truthy in JS, so a lost race never
+  // retried). First fix used one reused hidden fetcher player, but that
+  // uncovered a real YouTube IFrame API quirk: calling loadPlaylist() a
+  // second time on an existing player instance updates getVideoData().list
+  // immediately, but getPlaylist() (the actual video id array) stays stuck
+  // returning the *first* playlist's ids forever. Only a genuinely fresh
+  // player instance per fetch returns correct data — so that's what this
+  // does now, torn down and rebuilt every call. Fetches are still
+  // serialized so rebuilds can't race each other.
+  function enqueuePlaylistFetch(playlistId) {
+    const run = () => fetchPlaylistIds(playlistId);
+    const result = fetchQueueRef.current.then(run, run);
+    fetchQueueRef.current = result.catch(() => {});
+    return result;
+  }
+
+  function fetchPlaylistIds(playlistId, attempts = 15) {
     return new Promise((resolve) => {
-      const tryRead = (n) => {
-        const ids = playerRef.current?.getPlaylist?.();
-        if (ids && ids.length) {
-          resolve(ids);
-        } else if (n <= 0) {
-          resolve([]);
-        } else {
-          setTimeout(() => tryRead(n - 1), 300);
-        }
-      };
-      tryRead(attempts);
+      if (fetcherPlayerRef.current) {
+        fetcherPlayerRef.current.destroy();
+        fetcherPlayerRef.current = null;
+      }
+      const mount = document.getElementById('yt-fetch');
+      mount.innerHTML = '';
+      const inner = document.createElement('div');
+      mount.appendChild(inner);
+
+      const player = new window.YT.Player(inner, {
+        height: '1',
+        width: '1',
+        playerVars: { listType: 'playlist', list: playlistId, autoplay: 0 },
+        events: {
+          onReady: () => {
+            fetcherPlayerRef.current = player;
+            const tryRead = (n) => {
+              const ids = player.getPlaylist?.();
+              if (ids && ids.length) {
+                resolve(ids);
+              } else if (n <= 0) {
+                resolve([]);
+              } else {
+                setTimeout(() => tryRead(n - 1), 300);
+              }
+            };
+            tryRead(attempts);
+          },
+          onError: () => resolve([]),
+        },
+      });
     });
   }
 
@@ -565,6 +608,7 @@ export default function Player() {
       </div>
 
       <div id="yt-audio" className="yt-audio-mount" />
+      <div id="yt-fetch" className="yt-audio-mount" />
 
       <PlayerBar
         thumb={thumb}
