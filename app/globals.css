@@ -610,21 +610,30 @@ body {
 
 .playerbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 1rem;
-  padding: 0.7rem 1.1rem;
-  border-radius: 999px;
+  gap: 0.55rem 1rem;
+  padding: 0.75rem 1.1rem;
+  border-radius: 22px;
   width: 100%;
   max-width: 720px;
 }
 
-/* on desktop these wrappers are invisible to layout — their children
-   (thumb, track-info, transport buttons) sit directly in .playerbar's
-   row, same as before. On mobile each becomes its own row, see media
-   query below: thumbnail+title / buttons / timeline, three rows. */
-.playerbar-identity-row,
+/* two rows on desktop: thumbnail+title, then transport+timeline. On mobile
+   the timeline drops onto a third row of its own, see media query below. */
+.playerbar-identity-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  min-width: 0;
+}
+
 .playerbar-buttons-row {
-  display: contents;
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  flex-shrink: 0;
 }
 
 .thumb {
@@ -652,8 +661,7 @@ body {
 
 .track-info {
   min-width: 0;
-  flex-shrink: 1;
-  width: 150px;
+  flex: 1;
 }
 
 .track-title {
@@ -719,7 +727,9 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  min-width: 120px;
+  /* must be allowed to shrink: the volume slider expands in the same row,
+     and a floor here pushed the timeline past the bar's edge instead */
+  min-width: 0;
 }
 
 .seek-inline .time {
@@ -728,7 +738,8 @@ body {
   min-width: 30px;
 }
 
-.seek-inline input[type='range'] {
+.seek-inline input[type='range'],
+.volume-inline input[type='range'] {
   flex: 1;
   -webkit-appearance: none;
   appearance: none;
@@ -740,14 +751,16 @@ body {
   cursor: pointer;
 }
 
-.seek-inline input[type='range']::-webkit-slider-runnable-track {
+.seek-inline input[type='range']::-webkit-slider-runnable-track,
+.volume-inline input[type='range']::-webkit-slider-runnable-track {
   height: 4px;
   border: none;
   border-radius: 999px;
   background: transparent;
 }
 
-.seek-inline input[type='range']::-webkit-slider-thumb {
+.seek-inline input[type='range']::-webkit-slider-thumb,
+.volume-inline input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 14px;
@@ -762,31 +775,62 @@ body {
 }
 
 .seek-inline input[type='range']:hover::-webkit-slider-thumb,
-.seek-inline input[type='range']:active::-webkit-slider-thumb {
+.volume-inline input[type='range']:hover::-webkit-slider-thumb,
+.seek-inline input[type='range']:active::-webkit-slider-thumb,
+.volume-inline input[type='range']:active::-webkit-slider-thumb {
   box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 40%, transparent),
     0 0 20px 4px color-mix(in srgb, var(--accent) 85%, transparent);
 }
 
-.seek-inline input[type='range']::-moz-range-track {
+.seek-inline input[type='range']::-moz-range-track,
+.volume-inline input[type='range']::-moz-range-track {
   height: 4px;
   border: none;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.18);
 }
 
-.seek-inline input[type='range']::-moz-range-progress {
+.seek-inline input[type='range']::-moz-range-progress,
+.volume-inline input[type='range']::-moz-range-progress {
   height: 4px;
   border-radius: 999px;
   background: var(--accent);
 }
 
-.seek-inline input[type='range']::-moz-range-thumb {
+.seek-inline input[type='range']::-moz-range-thumb,
+.volume-inline input[type='range']::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border: none;
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 14px 2px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.volume-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+/* stays collapsed to the speaker icon until hovered, keyboard-focused, or
+   (on touch, where there is no hover) tapped open — so the bar keeps its
+   density and the timeline keeps its room */
+.volume-inline input[type='range'] {
+  flex: 0 0 auto;
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: width 0.22s ease, opacity 0.22s ease;
+}
+
+.volume-inline:hover input[type='range'],
+.volume-inline:focus-within input[type='range'],
+.volume-inline.open input[type='range'] {
+  width: 64px;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .keyhints {

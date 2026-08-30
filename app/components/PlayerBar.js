@@ -1,4 +1,5 @@
-import { IconPlay, IconPause, IconSkipBack, IconSkipForward, IconMusicNote, IconRepeat, IconRepeatOne, IconShuffle } from './icons';
+import { useEffect, useRef, useState } from 'react';
+import { IconPlay, IconPause, IconSkipBack, IconSkipForward, IconMusicNote, IconRepeat, IconRepeatOne, IconShuffle, IconVolume, IconVolumeMute } from './icons';
 import { fmtTime } from '../vibeStore';
 
 const LOOP_ICON = { playlist: IconRepeat, shuffle: IconShuffle, song: IconRepeatOne };
@@ -12,16 +13,49 @@ export default function PlayerBar({
   curTime,
   duration,
   loopMode,
+  volume,
+  muted,
   onPrev,
   onPlayPause,
   onNext,
   onCycleLoop,
+  onVolumeChange,
+  onToggleMute,
   onSeekChange,
   onSeekCommit,
   onSeekDragStart,
 }) {
   const pct = ((curTime / (duration || 100)) * 100).toFixed(2);
   const LoopIcon = LOOP_ICON[loopMode] || IconRepeat;
+  const effectiveVolume = muted ? 0 : volume;
+  const VolumeIcon = effectiveVolume === 0 ? IconVolumeMute : IconVolume;
+
+  // touch devices never fire hover, so the slider is tapped open instead —
+  // first tap on the speaker reveals it, taps after that mute/unmute
+  const [volumeOpen, setVolumeOpen] = useState(false);
+  const volumeGroupRef = useRef(null);
+  const noHoverRef = useRef(false);
+
+  useEffect(() => {
+    noHoverRef.current = window.matchMedia('(hover: none)').matches;
+  }, []);
+
+  useEffect(() => {
+    if (!volumeOpen) return;
+    function onPointerDown(e) {
+      if (!volumeGroupRef.current?.contains(e.target)) setVolumeOpen(false);
+    }
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [volumeOpen]);
+
+  function onVolumeButtonClick() {
+    if (noHoverRef.current && !volumeOpen) {
+      setVolumeOpen(true);
+      return;
+    }
+    onToggleMute();
+  }
 
   return (
     <footer className="playerbar-wrap">
@@ -53,6 +87,30 @@ export default function PlayerBar({
           >
             <LoopIcon width={16} height={16} />
           </button>
+
+          {/* collapsed to just the speaker icon until hovered, focused, or
+              tapped open — see onVolumeButtonClick */}
+          <div className={`volume-inline ${volumeOpen ? 'open' : ''}`} ref={volumeGroupRef}>
+            <button
+              className={`bar-icon-btn ${muted ? 'active' : ''}`}
+              onClick={onVolumeButtonClick}
+              title={muted ? 'Unmute' : 'Mute'}
+            >
+              <VolumeIcon width={16} height={16} />
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={effectiveVolume}
+              aria-label="Volume"
+              title={`Volume ${effectiveVolume}%`}
+              style={{
+                background: `linear-gradient(to right, var(--accent) ${effectiveVolume}%, rgba(255,255,255,0.18) ${effectiveVolume}%)`,
+              }}
+              onChange={(e) => onVolumeChange(Number(e.target.value))}
+            />
+          </div>
         </div>
 
         <div className="seek-inline">

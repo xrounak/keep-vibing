@@ -114,6 +114,26 @@ export function IconShuffle(props) {
   );
 }
 
+export function IconVolume(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M4 9.5h3L11.5 6v12L7 14.5H4z" />
+      <path d="M15 9.8a3.2 3.2 0 0 1 0 4.4" />
+      <path d="M17.6 7.2a6.8 6.8 0 0 1 0 9.6" />
+    </svg>
+  );
+}
+
+export function IconVolumeMute(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M4 9.5h3L11.5 6v12L7 14.5H4z" />
+      <path d="M16 10l4 4" />
+      <path d="M20 10l-4 4" />
+    </svg>
+  );
+}
+
 export function IconInstagram(props) {
   return (
     <svg {...base} {...props}>

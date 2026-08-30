@@ -40,9 +40,12 @@ export default function Player() {
   const fetchQueueRef = useRef(Promise.resolve()); // serializes fetches so rebuilds can't race each other
   const playlistCacheRef = useRef({}); // mirror of playlistCache, read synchronously so rapid taps can't double-fetch the same category
   const switchTimerRef = useRef(null); // poll driving playlist-switch retries and the loop/shuffle re-arm
+  const volumeRef = useRef(100); // read inside the once-registered onReady handler
 
   const [activeCategory, setActiveCategory] = useState(0);
   const [loopMode, setLoopMode] = useState('playlist');
+  const [volume, setVolume] = useState(100);
+  const [muted, setMuted] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [trackTitle, setTrackTitle] = useState('Tap play to start');
   const [trackAuthor, setTrackAuthor] = useState('');
@@ -104,6 +107,7 @@ export default function Player() {
         },
         events: {
           onReady: () => {
+            player.setVolume(volumeRef.current);
             checkIncomingLink();
           },
           onStateChange: onPlayerStateChange,
@@ -339,6 +343,43 @@ export default function Player() {
   function beginLocalAction() {
     clearTimeout(applyingRemoteTimeoutRef.current);
     applyingRemoteRef.current = false;
+  }
+
+  // volume is deliberately local — it is not part of the room state, so
+  // turning yours down doesn't turn everyone else's down too
+  function onVolumeChange(next) {
+    setVolume(next);
+    volumeRef.current = next;
+    const player = playerRef.current;
+    if (!player) return;
+    player.setVolume(next);
+    // dragging the slider off zero is an implicit unmute, and dragging it
+    // to zero is an implicit mute — otherwise the icon lies about the state
+    if (next === 0 && !muted) {
+      setMuted(true);
+      player.mute();
+    } else if (next > 0 && muted) {
+      setMuted(false);
+      player.unMute();
+    }
+  }
+
+  function toggleMute() {
+    const player = playerRef.current;
+    const next = !muted;
+    setMuted(next);
+    if (!player) return;
+    if (next) {
+      player.mute();
+    } else {
+      player.unMute();
+      // unmuting from a slider dragged to zero would stay silent
+      if (volumeRef.current === 0) {
+        volumeRef.current = 100;
+        setVolume(100);
+      }
+      player.setVolume(volumeRef.current);
+    }
   }
 
   function onSeekChange(e) {
@@ -699,10 +740,14 @@ export default function Player() {
         curTime={curTime}
         duration={duration}
         loopMode={loopMode}
+        volume={volume}
+        muted={muted}
         onPrev={prevTrack}
         onPlayPause={togglePlay}
         onNext={nextTrack}
         onCycleLoop={cycleLoopMode}
+        onVolumeChange={onVolumeChange}
+        onToggleMute={toggleMute}
         onSeekChange={onSeekChange}
         onSeekCommit={onSeekCommit}
         onSeekDragStart={() => (seekDraggingRef.current = true)}
